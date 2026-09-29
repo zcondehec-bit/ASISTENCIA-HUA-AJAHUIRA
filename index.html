@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>LECTOR DE ASISTENCIA QR</title>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+
+body {
+    font-family: Arial, sans-serif;
+    background: #eeeeee;
+    margin: 0;
+    padding: 15px;
+    text-align: center;
+}
+
+.contenedor {
+    max-width: 500px;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.15);
+}
+
+h1 {
+    font-size: 28px;
+    margin-bottom: 5px;
+}
+
+.subtitulo {
+    font-size: 17px;
+    margin-bottom: 20px;
+}
+
+#reader {
+    width: 100%;
+    margin-top: 15px;
+}
+
+button {
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: bold;
+    background: #1976d2;
+    color: white;
+    margin-top: 10px;
+}
+
+button:disabled {
+    background: #999999;
+}
+
+#resultado {
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 12px;
+    font-size: 20px;
+    font-weight: bold;
+    min-height: 30px;
+}
+
+.ok {
+    background: #d4edda;
+    color: #155724;
+}
+
+.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.aviso {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.nombre {
+    font-size: 25px;
+    margin-top: 10px;
+}
+
+.hora {
+    font-size: 21px;
+    margin-top: 10px;
+}
+
+.estado {
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="contenedor">
+
+<h1>📱 LECTOR QR</h1>
+
+<div class="subtitulo">
+CONTROL DE ASISTENCIA
+</div>
+
+<button
+id="botonCamara"
+onclick="iniciarCamara()">
+
+📷 ACTIVAR CÁMARA
+
+</button>
+
+<div id="reader"></div>
+
+<div
+id="resultado"
+class="aviso">
+
+PRESIONE "ACTIVAR CÁMARA"
+
+</div>
+
+</div>
+
+<script>
+
+// ============================================================
+// URL DE TU APPS SCRIPT
+// ============================================================
+
+const URL_APPS_SCRIPT =
+"https://script.google.com/macros/s/AKfycby1low9HbkRM7uT6N4qqpvBDRch1QfkOXik6GA6cybBYJ0rNjqFv9JEOXf5dxXE-0o/exec";
+
+let lector = null;
+let procesando = false;
+
+
+// ============================================================
+// ACTIVAR CÁMARA
+// ============================================================
+
+async function iniciarCamara() {
+
+    const boton =
+    document.getElementById("botonCamara");
+
+    boton.disabled = true;
+
+    boton.innerText =
+    "📷 ACTIVANDO CÁMARA...";
+
+    try {
+
+        const stream =
+        await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: {
+                    ideal: "environment"
+                }
+            }
+        });
+
+        stream
+        .getTracks()
+        .forEach(track => track.stop());
+
+        lector =
+        new Html5Qrcode("reader");
+
+        await lector.start(
+
+            {
+                facingMode: "environment"
+            },
+
+            {
+                fps: 10,
+
+                qrbox: {
+                    width: 250,
+                    height: 250
+                }
+            },
+
+            codigoQR => {
+                procesarQR(codigoQR);
+            },
+
+            error => {
+                // No mostrar errores normales
+            }
+
+        );
+
+        boton.innerText =
+        "🟢 CÁMARA ACTIVA";
+
+        mostrarMensaje(
+            "AVISO",
+            "ESCANEE EL CÓDIGO QR",
+            "",
+            ""
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+        boton.disabled = false;
+
+        boton.innerText =
+        "📷 ACTIVAR CÁMARA";
+
+        mostrarMensaje(
+            "ERROR",
+            "NO SE PUDO ACTIVAR LA CÁMARA",
+            "",
+            ""
+        );
+
+        hablar(
+            "No se pudo activar la cámara"
+        );
+    }
+}
+
+
+// ============================================================
+// PROCESAR QR
+// ============================================================
+
+function procesarQR(codigo) {
+
+    if (procesando) {
+        return;
+    }
+
+    procesando = true;
+
+    const ci =
+    String(codigo).trim();
+
+    if (ci === "") {
+        procesando = false;
+        return;
+    }
+
+    if (lector) {
+        lector.pause(true);
+    }
+
+    mostrarMensaje(
+        "AVISO",
+        "🔎 VERIFICANDO...",
+        "",
+        ""
+    );
+
+    enviarCI(ci);
+}
+
+
+// ============================================================
+// ENVIAR C.I.
+// ============================================================
+
+function enviarCI(ci) {
+
+    const callbackName =
+    "respuestaQR_" + Date.now();
+
+    window[callbackName] =
+    function(respuesta) {
+
+        try {
+
+            mostrarResultado(respuesta);
+
+        } finally {
+
+            delete window[callbackName];
+
+            setTimeout(function() {
+
+                procesando = false;
+
+                if (lector) {
+                    lector.resume();
+                }
+
+            }, 3000);
+        }
+    };
+
+    const script =
+    document.createElement("script");
+
+    script.src =
+        URL_APPS_SCRIPT +
+        "?ci=" +
+        encodeURIComponent(ci) +
+        "&callback=" +
+        callbackName;
+
+    script.onerror =
+    function() {
+
+        mostrarMensaje(
+            "ERROR",
+            "❌ ERROR DE CONEXIÓN",
+            "",
+            ""
+        );
+
+        hablar(
+            "Error de conexión con el sistema"
+        );
+
+        delete window[callbackName];
+
+        setTimeout(function() {
+
+            procesando = false;
+
+            if (lector) {
+                lector.resume();
+            }
+
+        }, 3000);
+    };
+
+    document.body.appendChild(script);
+}
+
+
+// ============================================================
+// MOSTRAR RESULTADO
+// ============================================================
+
+function mostrarResultado(respuesta) {
+
+    if (!respuesta) {
+
+        mostrarMensaje(
+            "ERROR",
+            "SIN RESPUESTA DEL SISTEMA",
+            "",
+            ""
+        );
+
+        hablar(
+            "Sin respuesta del sistema"
+        );
+
+        return;
+    }
+
+
+    if (respuesta.estado === "OK") {
+
+        mostrarMensaje(
+            "OK",
+            "✅ ASISTENCIA REGISTRADA",
+            respuesta.nombre,
+            respuesta.hora
+        );
+
+        hablar(
+            "Asistencia registrada. " +
+            respuesta.nombre
+        );
+
+        return;
+    }
+
+
+    if (respuesta.estado === "YA") {
+
+        mostrarMensaje(
+            "AVISO",
+            "⚠️ ASISTENCIA YA REGISTRADA",
+            respuesta.nombre,
+            ""
+        );
+
+        hablar(
+            "Asistencia ya registrada. " +
+            respuesta.nombre
+        );
+
+        return;
+    }
+
+
+    if (respuesta.estado === "FUERA") {
+
+        mostrarMensaje(
+            "AVISO",
+            "⏰ FUERA DEL HORARIO",
+            respuesta.nombre,
+            ""
+        );
+
+        hablar(
+            "Fuera del horario. " +
+            respuesta.nombre
+        );
+
+        return;
+    }
+
+
+    mostrarMensaje(
+        "ERROR",
+        "❌ " +
+        (respuesta.mensaje || "ERROR"),
+        "",
+        ""
+    );
+
+    hablar(
+        respuesta.mensaje || "Error"
+    );
+}
+
+
+// ============================================================
+// MOSTRAR MENSAJE
+// ============================================================
+
+function mostrarMensaje(
+    tipo,
+    mensaje,
+    nombre,
+    hora
+) {
+
+    const resultado =
+    document.getElementById("resultado");
+
+    resultado.className = "";
+
+    if (tipo === "OK") {
+
+        resultado.classList.add("ok");
+
+    } else if (tipo === "ERROR") {
+
+        resultado.classList.add("error");
+
+    } else {
+
+        resultado.classList.add("aviso");
+    }
+
+    let html =
+        '<div class="estado">' +
+        mensaje +
+        '</div>';
+
+    if (nombre) {
+
+        html +=
+            '<div class="nombre">' +
+            nombre +
+            '</div>';
+    }
+
+    if (hora) {
+
+        html +=
+            '<div class="hora">' +
+            '🕐 ' +
+            hora +
+            '</div>';
+    }
+
+    resultado.innerHTML = html;
+}
+
+
+// ============================================================
+// VOZ
+// ============================================================
+
+function hablar(texto) {
+
+    try {
+
+        if (!("speechSynthesis" in window)) {
+            return;
+        }
+
+        window.speechSynthesis.cancel();
+
+        const voz =
+        new SpeechSynthesisUtterance(texto);
+
+        voz.lang = "es-ES";
+        voz.rate = 0.95;
+        voz.pitch = 1;
+
+        window.speechSynthesis.speak(voz);
+
+    } catch (error) {
+
+        console.log(error);
+    }
+}
+
+</script>
+
+</body>
+
+</html>
